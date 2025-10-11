@@ -2,7 +2,7 @@
 # .git/hooks/pre-commit
 #
 # This hook is executed before a commit is made.
-# It runs TypeScript checking and linting, and auto-stages fixes.
+# It runs TypeScript checking, linting, and Cypress tests based on project type.
 
 # Colors for output
 RED='\033[0;31m'
@@ -12,10 +12,22 @@ NC='\033[0m' # No Color
 
 echo "${YELLOW}🔍 Running pre-commit checks...${NC}"
 
-# Check if we're in a TypeScript project
+# Detect project type
+REPO_NAME=$(basename "$(git rev-parse --show-toplevel)")
+IS_RAILS_PROJECT=false
+IS_TYPESCRIPT_PROJECT=false
+
+if [ -f "Gemfile" ] && grep -q "rails" Gemfile 2>/dev/null; then
+    IS_RAILS_PROJECT=true
+fi
+
 if [ -f "tsconfig.json" ] || [ -f "tsconfig.app.json" ] || [ -f "tsconfig.node.json" ]; then
+    IS_TYPESCRIPT_PROJECT=true
+fi
+
+# Check if we're in a TypeScript project
+if [ "$IS_TYPESCRIPT_PROJECT" = true ]; then
     # Permanently skip TypeScript checks for games (known issues)
-    REPO_NAME=$(basename "$(git rev-parse --show-toplevel)")
     if [ "$REPO_NAME" = "TrafficRun" ] || [ "$REPO_NAME" = "CrossyRoad" ] || [ "$REPO_NAME" = "SpaceShooter" ]; then
         echo "${YELLOW}⚠️  Skipping TypeScript check for $REPO_NAME (games - permanent skip)${NC}"
     else
@@ -92,6 +104,41 @@ if [ -f "package.json" ]; then
     # else
     #     echo "${YELLOW}⚠️  No build script found, skipping build check${NC}"
     # fi
+fi
+
+# Check for Cypress tests in Rails projects
+if [ "$IS_RAILS_PROJECT" = true ] && [ -f "package.json" ] && [ -d "cypress" ]; then
+    # Check if Rails server is running
+    if curl -s http://localhost:3000 > /dev/null 2>&1; then
+        # Check for test script
+        if npm run test --dry-run >/dev/null 2>&1; then
+            echo "${YELLOW}🧪 Running Cypress tests...${NC}"
+
+            # Load nvm if available
+            if [ -s "$HOME/.nvm/nvm.sh" ]; then
+                . "$HOME/.nvm/nvm.sh"
+            fi
+
+            # Run Cypress tests and capture output
+            TEST_OUTPUT=$(npm run test 2>&1)
+            TEST_EXIT_CODE=$?
+
+            if [ $TEST_EXIT_CODE -eq 0 ]; then
+                echo "${GREEN}✅ All Cypress tests passed${NC}"
+            else
+                echo "${RED}❌ Cypress tests failed${NC}"
+                echo "${RED}Test output:${NC}"
+                echo "$TEST_OUTPUT"
+                echo "${RED}Please fix failing tests before committing.${NC}"
+                exit 1
+            fi
+        else
+            echo "${YELLOW}⚠️  No test script found, skipping Cypress tests${NC}"
+        fi
+    else
+        echo "${YELLOW}⚠️  Rails server not running on port 3000, skipping Cypress tests${NC}"
+        echo "${YELLOW}💡 Start server with: rails s${NC}"
+    fi
 fi
 
 echo "${GREEN}🎉 All pre-commit checks passed!${NC}"
