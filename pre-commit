@@ -182,40 +182,8 @@ if [ -f "package.json" ]; then
     # fi
 fi
 
-# Check for Cypress tests in any project with cypress directory
-if [ -f "package.json" ] && [ -d "cypress" ]; then
-    # Check for test script in package.json
-    if grep -q '"test"' package.json; then
-        # Check if dev server is running
-        if curl -s http://localhost:3000 > /dev/null 2>&1; then
-            echo "${YELLOW}🧪 Running Cypress tests...${NC}"
-
-            # Load nvm if available
-            if [ -s "$HOME/.nvm/nvm.sh" ]; then
-                . "$HOME/.nvm/nvm.sh"
-            fi
-
-            # Run Cypress tests and capture output
-            TEST_OUTPUT=$(npm run test 2>&1)
-            TEST_EXIT_CODE=$?
-
-            if [ $TEST_EXIT_CODE -eq 0 ]; then
-                echo "${GREEN}✅ All Cypress tests passed${NC}"
-            else
-                echo "${RED}❌ Cypress tests failed${NC}"
-                echo "${RED}Test output:${NC}"
-                echo "$TEST_OUTPUT"
-                echo "${RED}Please fix failing tests before committing.${NC}"
-                exit 1
-            fi
-        else
-            echo "${YELLOW}⚠️  Dev server not running on port 3000, skipping Cypress tests${NC}"
-            echo "${YELLOW}💡 Start server with: npm run dev${NC}"
-        fi
-    else
-        echo "${YELLOW}⚠️  No test script found, skipping Cypress tests${NC}"
-    fi
-fi
+# Skip Cypress tests in pre-commit (run in pre-push instead for better performance)
+echo "${YELLOW}💡 Cypress tests will run during pre-push for better performance${NC}"
 
 echo "${GREEN}🎉 All pre-commit checks passed!${NC}"
 exit 0

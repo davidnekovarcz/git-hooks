@@ -102,54 +102,8 @@ while read local_ref local_sha remote_ref remote_sha; do
             IS_TYPESCRIPT_PROJECT=true
         fi
         
-        # Run TypeScript check
-        if [ "$IS_TYPESCRIPT_PROJECT" = true ]; then
-            # Permanently skip TypeScript checks for games (known issues)
-            if [ "$REPO_NAME" = "TrafficRun" ] || [ "$REPO_NAME" = "CrossyRoad" ] || [ "$REPO_NAME" = "SpaceShooter" ]; then
-                echo "${YELLOW}⚠️  Skipping TypeScript check for $REPO_NAME (games - permanent skip)${NC}"
-            else
-                if command -v npx >/dev/null 2>&1; then
-                    echo "${YELLOW}📝 Running TypeScript check...${NC}"
-                    
-                    TSC_OUTPUT=$(npx tsc --noEmit 2>&1)
-                    TSC_EXIT_CODE=$?
-                    
-                    if [ $TSC_EXIT_CODE -eq 0 ]; then
-                        echo "${GREEN}✅ TypeScript check passed${NC}"
-                    else
-                        echo "${RED}❌ TypeScript check failed${NC}"
-                        echo "${RED}TypeScript errors:${NC}"
-                        echo "$TSC_OUTPUT"
-                        echo "${RED}Please fix TypeScript errors before pushing.${NC}"
-                        exit 1
-                    fi
-                fi
-            fi
-        fi
-        
-        # Run linting
-        if [ -f "package.json" ]; then
-            if [ "$REPO_NAME" = "TrafficRun" ] || [ "$REPO_NAME" = "CrossyRoad" ] || [ "$REPO_NAME" = "SpaceShooter" ]; then
-                echo "${YELLOW}⚠️  Skipping linting for $REPO_NAME (games - permanent skip)${NC}"
-            else
-                if npm run lint --dry-run >/dev/null 2>&1; then
-                    echo "${YELLOW}🧹 Running linter...${NC}"
-                    
-                    LINT_OUTPUT=$(npm run lint 2>&1)
-                    LINT_EXIT_CODE=$?
-                    
-                    if [ $LINT_EXIT_CODE -eq 0 ]; then
-                        echo "${GREEN}✅ Linting passed${NC}"
-                    else
-                        echo "${RED}❌ Linting failed${NC}"
-                        echo "${RED}Linting errors:${NC}"
-                        echo "$LINT_OUTPUT"
-                        echo "${RED}Please fix linting errors before pushing.${NC}"
-                        exit 1
-                    fi
-                fi
-            fi
-        fi
+        # Skip TypeScript and linting checks (already run in pre-commit)
+        echo "${YELLOW}💡 TypeScript and linting checks already passed in pre-commit${NC}"
         
         # Run Cypress tests
         if [ -f "package.json" ] && [ -d "cypress" ]; then
