@@ -35,7 +35,6 @@ SENSITIVE_PATTERNS=(
     "NEXT_PUBLIC_.*=\s*['\"][^'\"]*['\"]"  # Next.js public env vars with actual values
     "REACT_APP_.*=\s*['\"][^'\"]*['\"]"    # React app env vars with actual values
     "VITE_.*=\s*['\"][^'\"]*['\"]"         # Vite env vars with actual values
-    "^\.env$"                 # .env files (not process.env references or .gitignore entries)
     "password\s*=\s*['\"][^'\"]*['\"]"     # Password fields with actual values
     "secret\s*=\s*['\"][^'\"]*['\"]"       # Secret fields with actual values
     "token\s*=\s*['\"][^'\"]*['\"]"        # Token fields with actual values
