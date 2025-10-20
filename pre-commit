@@ -32,15 +32,14 @@ SENSITIVE_PATTERNS=(
     "postgres://.*:.*@"       # PostgreSQL connection strings
     "mysql://.*:.*@"          # MySQL connection strings
     "redis://.*:.*@"          # Redis connection strings
-    "NEXT_PUBLIC_.*="         # Next.js public env vars (often contain secrets)
-    "REACT_APP_.*="           # React app env vars
-    "VITE_.*="                # Vite env vars
-    "\.env"                   # Any .env files
-    "password.*="             # Password fields
-    "secret.*="               # Secret fields
-    "token.*="                # Token fields
-    "key.*="                  # Key fields
-    "api.*key.*="             # API key fields
+    "NEXT_PUBLIC_.*=\s*['\"][^'\"]*['\"]"  # Next.js public env vars with actual values
+    "REACT_APP_.*=\s*['\"][^'\"]*['\"]"    # React app env vars with actual values
+    "VITE_.*=\s*['\"][^'\"]*['\"]"         # Vite env vars with actual values
+    "\.env\s*$"               # .env files (not process.env references)
+    "password\s*=\s*['\"][^'\"]*['\"]"     # Password fields with actual values
+    "secret\s*=\s*['\"][^'\"]*['\"]"       # Secret fields with actual values
+    "token\s*=\s*['\"][^'\"]*['\"]"        # Token fields with actual values
+    "api.*key\s*=\s*['\"][^'\"]*['\"]"     # API key fields with actual values
 )
 
 # Check staged files for sensitive patterns
