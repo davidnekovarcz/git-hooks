@@ -2,7 +2,7 @@
 # .git/hooks/pre-commit
 #
 # This hook is executed before a commit is made.
-# It runs TypeScript checking, linting, and Cypress tests based on project type.
+# It runs essential checks to ensure code quality and security.
 
 # Colors for output
 RED='\033[0;31m'
@@ -12,172 +12,34 @@ NC='\033[0m' # No Color
 
 echo "${YELLOW}🔍 Running pre-commit checks...${NC}"
 
+# Load shared functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/shared/security-check.sh"
+source "$SCRIPT_DIR/shared/quality-checks.sh"
+
 # CRITICAL: Check for sensitive data in staged files
-echo "${YELLOW}🔒 Checking for sensitive data...${NC}"
-
-# List of sensitive patterns to block
-SENSITIVE_PATTERNS=(
-    "AIza[0-9A-Za-z_-]{35}"  # Google API keys
-    "sk-[0-9A-Za-z]{48}"     # OpenAI API keys
-    "xoxb-[0-9]{11}-[0-9]{11}-[0-9A-Za-z]{24}"  # Slack bot tokens
-    "xoxp-[0-9]{11}-[0-9]{11}-[0-9A-Za-z]{24}"  # Slack user tokens
-    "https://hooks\.slack\.com/services/[A-Z0-9]+/[A-Z0-9]+/[A-Za-z0-9]+"  # Slack webhooks
-    "-----BEGIN (RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----"  # Private keys
-    "AKIA[0-9A-Z]{16}"       # AWS access keys
-    "ya29\.[0-9A-Za-z_-]+"   # Google OAuth tokens
-    "1/[0-9A-Za-z_-]{43}"    # Google refresh tokens
-    "AIzaSy[0-9A-Za-z_-]{33}" # Firebase API keys
-    "firebase.*api.*key"      # Firebase config
-    "mongodb://.*:.*@"        # MongoDB connection strings
-    "postgres://.*:.*@"       # PostgreSQL connection strings
-    "mysql://.*:.*@"          # MySQL connection strings
-    "redis://.*:.*@"          # Redis connection strings
-    "NEXT_PUBLIC_.*=\s*['\"][^'\"]*['\"]"  # Next.js public env vars with actual values
-    "REACT_APP_.*=\s*['\"][^'\"]*['\"]"    # React app env vars with actual values
-    "VITE_.*=\s*['\"][^'\"]*['\"]"         # Vite env vars with actual values
-    "password\s*=\s*['\"][^'\"]*['\"]"     # Password fields with actual values
-    "secret\s*=\s*['\"][^'\"]*['\"]"       # Secret fields with actual values
-    "token\s*=\s*['\"][^'\"]*['\"]"        # Token fields with actual values
-    "api.*key\s*=\s*['\"][^'\"]*['\"]"     # API key fields with actual values
-)
-
-# Check staged files for sensitive patterns
-STAGED_FILES=$(git diff --cached --name-only)
-SENSITIVE_FOUND=false
-
-for file in $STAGED_FILES; do
-    # Skip binary files
-    if git diff --cached --numstat "$file" | grep -q "^-"; then
-        continue
-    fi
-    
-    # Check file content for sensitive patterns
-    for pattern in "${SENSITIVE_PATTERNS[@]}"; do
-        if git show ":$file" 2>/dev/null | grep -iE "$pattern" >/dev/null 2>&1; then
-            echo "${RED}❌ SECURITY VIOLATION DETECTED!${NC}"
-            echo "${RED}File: $file${NC}"
-            echo "${RED}Pattern: $pattern${NC}"
-            echo "${RED}This file contains sensitive data and cannot be committed!${NC}"
-            echo ""
-            echo "${YELLOW}Common sensitive data types:${NC}"
-            echo "  • API keys (Google, OpenAI, AWS, etc.)"
-            echo "  • Database connection strings"
-            echo "  • Slack webhooks and tokens"
-            echo "  • Private keys and certificates"
-            echo "  • Environment variables with secrets"
-            echo "  • Passwords and authentication tokens"
-            echo ""
-            echo "${YELLOW}To fix this:${NC}"
-            echo "  1. Remove the sensitive data from the file"
-            echo "  2. Add the file to .gitignore if it contains secrets"
-            echo "  3. Use environment variables instead"
-            echo "  4. Consider using a secrets management service"
-            echo ""
-            SENSITIVE_FOUND=true
-        fi
-    done
-done
-
-if [ "$SENSITIVE_FOUND" = true ]; then
-    echo "${RED}🚨 COMMIT BLOCKED: Sensitive data detected!${NC}"
-    echo "${RED}Please remove all sensitive information before committing.${NC}"
+if ! check_staged_files; then
     exit 1
 fi
 
-echo "${GREEN}✅ No sensitive data detected${NC}"
-
 # Detect project type
-REPO_NAME=$(basename "$(git rev-parse --show-toplevel)")
-IS_RAILS_PROJECT=false
-IS_TYPESCRIPT_PROJECT=false
+PROJECT_INFO=$(detect_project_type)
+REPO_NAME=$(echo "$PROJECT_INFO" | cut -d'|' -f1)
+IS_RAILS_PROJECT=$(echo "$PROJECT_INFO" | cut -d'|' -f2)
+IS_TYPESCRIPT_PROJECT=$(echo "$PROJECT_INFO" | cut -d'|' -f3)
 
-if [ -f "Gemfile" ] && grep -q "rails" Gemfile 2>/dev/null; then
-    IS_RAILS_PROJECT=true
-fi
-
-if [ -f "tsconfig.json" ] || [ -f "tsconfig.app.json" ] || [ -f "tsconfig.node.json" ]; then
-    IS_TYPESCRIPT_PROJECT=true
-fi
-
-# Check if we're in a TypeScript project
-if [ "$IS_TYPESCRIPT_PROJECT" = true ]; then
-    # Permanently skip TypeScript checks for games (known issues)
-    if [ "$REPO_NAME" = "TrafficRun" ] || [ "$REPO_NAME" = "CrossyRoad" ] || [ "$REPO_NAME" = "SpaceShooter" ]; then
-        echo "${YELLOW}⚠️  Skipping TypeScript check for $REPO_NAME (games - permanent skip)${NC}"
-    else
-        # Run TypeScript check
-        if command -v npx >/dev/null 2>&1; then
-            echo "${YELLOW}📝 Running TypeScript check...${NC}"
-        
-            # Run TypeScript check and capture output
-            TSC_OUTPUT=$(npx tsc --noEmit 2>&1)
-            TSC_EXIT_CODE=$?
-            
-            if [ $TSC_EXIT_CODE -eq 0 ]; then
-                echo "${GREEN}✅ TypeScript check passed${NC}"
-            else
-                echo "${RED}❌ TypeScript check failed${NC}"
-                echo "${RED}TypeScript errors:${NC}"
-                echo "$TSC_OUTPUT"
-                echo "${RED}Please fix TypeScript errors before committing.${NC}"
-                exit 1
-            fi
-        else
-            echo "${YELLOW}⚠️  npx not found, skipping TypeScript check${NC}"
-        fi
+# Run TypeScript check
+if [ "$IS_TYPESCRIPT_PROJECT" = "true" ]; then
+    if ! run_typescript_check "$REPO_NAME"; then
+        exit 1
     fi
 fi
 
-# Check if we have a linting script
+# Run linting
 if [ -f "package.json" ]; then
-    # Permanently skip linting for games
-    REPO_NAME=$(basename "$(git rev-parse --show-toplevel)")
-    if [ "$REPO_NAME" = "TrafficRun" ] || [ "$REPO_NAME" = "CrossyRoad" ] || [ "$REPO_NAME" = "SpaceShooter" ]; then
-        echo "${YELLOW}⚠️  Skipping linting for $REPO_NAME (games - permanent skip)${NC}"
-    else
-        # Check for common linting scripts
-        if npm run lint --dry-run >/dev/null 2>&1; then
-            echo "${YELLOW}🧹 Running linter...${NC}"
-
-            # Run linter and capture output
-            LINT_OUTPUT=$(npm run lint 2>&1)
-            LINT_EXIT_CODE=$?
-
-            if [ $LINT_EXIT_CODE -eq 0 ]; then
-                echo "${GREEN}✅ Linting passed${NC}"
-                
-                # Auto-stage any fixes made by the linter
-                if [ -n "$(git diff --cached --name-only)" ]; then
-                    echo "${YELLOW}📦 Auto-staging linter fixes...${NC}"
-                    git add .
-                fi
-            else
-                echo "${RED}❌ Linting failed${NC}"
-                echo "${RED}Linting errors:${NC}"
-                echo "$LINT_OUTPUT"
-                echo "${RED}Please fix linting errors before committing.${NC}"
-                exit 1
-            fi
-        else
-            echo "${YELLOW}⚠️  No lint script found, skipping linting${NC}"
-        fi
+    if ! run_linting "$REPO_NAME"; then
+        exit 1
     fi
-
-    # SKIP: Check for build script
-    # if npm run build --dry-run >/dev/null 2>&1; then
-    #     echo "${YELLOW}🔨 Running build check...${NC}"
-    #
-    #     # Run build to ensure everything compiles
-    #     if npm run build; then
-    #         echo "${GREEN}✅ Build check passed${NC}"
-    #     else
-    #         echo "${RED}❌ Build check failed${NC}"
-    #         echo "${RED}Please fix build errors before committing.${NC}"
-    #         exit 1
-    #     fi
-    # else
-    #     echo "${YELLOW}⚠️  No build script found, skipping build check${NC}"
-    # fi
 fi
 
 # Skip Cypress tests in pre-commit (run in pre-push instead for better performance)
