@@ -12,6 +12,82 @@ NC='\033[0m' # No Color
 
 echo "${YELLOW}🔍 Running pre-commit checks...${NC}"
 
+# CRITICAL: Check for sensitive data in staged files
+echo "${YELLOW}🔒 Checking for sensitive data...${NC}"
+
+# List of sensitive patterns to block
+SENSITIVE_PATTERNS=(
+    "AIza[0-9A-Za-z_-]{35}"  # Google API keys
+    "sk-[0-9A-Za-z]{48}"     # OpenAI API keys
+    "xoxb-[0-9]{11}-[0-9]{11}-[0-9A-Za-z]{24}"  # Slack bot tokens
+    "xoxp-[0-9]{11}-[0-9]{11}-[0-9A-Za-z]{24}"  # Slack user tokens
+    "https://hooks\.slack\.com/services/[A-Z0-9]+/[A-Z0-9]+/[A-Za-z0-9]+"  # Slack webhooks
+    "-----BEGIN (RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----"  # Private keys
+    "AKIA[0-9A-Z]{16}"       # AWS access keys
+    "ya29\.[0-9A-Za-z_-]+"   # Google OAuth tokens
+    "1/[0-9A-Za-z_-]{43}"    # Google refresh tokens
+    "AIzaSy[0-9A-Za-z_-]{33}" # Firebase API keys
+    "firebase.*api.*key"      # Firebase config
+    "mongodb://.*:.*@"        # MongoDB connection strings
+    "postgres://.*:.*@"       # PostgreSQL connection strings
+    "mysql://.*:.*@"          # MySQL connection strings
+    "redis://.*:.*@"          # Redis connection strings
+    "NEXT_PUBLIC_.*="         # Next.js public env vars (often contain secrets)
+    "REACT_APP_.*="           # React app env vars
+    "VITE_.*="                # Vite env vars
+    "\.env"                   # Any .env files
+    "password.*="             # Password fields
+    "secret.*="               # Secret fields
+    "token.*="                # Token fields
+    "key.*="                  # Key fields
+    "api.*key.*="             # API key fields
+)
+
+# Check staged files for sensitive patterns
+STAGED_FILES=$(git diff --cached --name-only)
+SENSITIVE_FOUND=false
+
+for file in $STAGED_FILES; do
+    # Skip binary files
+    if git diff --cached --numstat "$file" | grep -q "^-"; then
+        continue
+    fi
+    
+    # Check file content for sensitive patterns
+    for pattern in "${SENSITIVE_PATTERNS[@]}"; do
+        if git show ":$file" 2>/dev/null | grep -iE "$pattern" >/dev/null 2>&1; then
+            echo "${RED}❌ SECURITY VIOLATION DETECTED!${NC}"
+            echo "${RED}File: $file${NC}"
+            echo "${RED}Pattern: $pattern${NC}"
+            echo "${RED}This file contains sensitive data and cannot be committed!${NC}"
+            echo ""
+            echo "${YELLOW}Common sensitive data types:${NC}"
+            echo "  • API keys (Google, OpenAI, AWS, etc.)"
+            echo "  • Database connection strings"
+            echo "  • Slack webhooks and tokens"
+            echo "  • Private keys and certificates"
+            echo "  • Environment variables with secrets"
+            echo "  • Passwords and authentication tokens"
+            echo ""
+            echo "${YELLOW}To fix this:${NC}"
+            echo "  1. Remove the sensitive data from the file"
+            echo "  2. Add the file to .gitignore if it contains secrets"
+            echo "  3. Use environment variables instead"
+            echo "  4. Consider using a secrets management service"
+            echo ""
+            SENSITIVE_FOUND=true
+        fi
+    done
+done
+
+if [ "$SENSITIVE_FOUND" = true ]; then
+    echo "${RED}🚨 COMMIT BLOCKED: Sensitive data detected!${NC}"
+    echo "${RED}Please remove all sensitive information before committing.${NC}"
+    exit 1
+fi
+
+echo "${GREEN}✅ No sensitive data detected${NC}"
+
 # Detect project type
 REPO_NAME=$(basename "$(git rev-parse --show-toplevel)")
 IS_RAILS_PROJECT=false
@@ -106,12 +182,12 @@ if [ -f "package.json" ]; then
     # fi
 fi
 
-# Check for Cypress tests in Rails projects
-if [ "$IS_RAILS_PROJECT" = true ] && [ -f "package.json" ] && [ -d "cypress" ]; then
-    # Check if Rails server is running
-    if curl -s http://localhost:3000 > /dev/null 2>&1; then
-        # Check for test script
-        if npm run test --dry-run >/dev/null 2>&1; then
+# Check for Cypress tests in any project with cypress directory
+if [ -f "package.json" ] && [ -d "cypress" ]; then
+    # Check for test script in package.json
+    if grep -q '"test"' package.json; then
+        # Check if dev server is running
+        if curl -s http://localhost:3000 > /dev/null 2>&1; then
             echo "${YELLOW}🧪 Running Cypress tests...${NC}"
 
             # Load nvm if available
@@ -133,11 +209,11 @@ if [ "$IS_RAILS_PROJECT" = true ] && [ -f "package.json" ] && [ -d "cypress" ]; 
                 exit 1
             fi
         else
-            echo "${YELLOW}⚠️  No test script found, skipping Cypress tests${NC}"
+            echo "${YELLOW}⚠️  Dev server not running on port 3000, skipping Cypress tests${NC}"
+            echo "${YELLOW}💡 Start server with: npm run dev${NC}"
         fi
     else
-        echo "${YELLOW}⚠️  Rails server not running on port 3000, skipping Cypress tests${NC}"
-        echo "${YELLOW}💡 Start server with: rails s${NC}"
+        echo "${YELLOW}⚠️  No test script found, skipping Cypress tests${NC}"
     fi
 fi
 

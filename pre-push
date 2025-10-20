@@ -1,0 +1,215 @@
+#!/bin/sh
+# .git/hooks/pre-push
+#
+# This hook is executed before a push is made.
+# It runs all pre-commit checks plus additional tests to ensure code quality.
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+echo "${BLUE}🚀 Running pre-push checks...${NC}"
+
+# CRITICAL: Check for sensitive data in commits being pushed
+echo "${YELLOW}🔒 Checking for sensitive data in commits...${NC}"
+
+# List of sensitive patterns to block
+SENSITIVE_PATTERNS=(
+    "AIza[0-9A-Za-z_-]{35}"  # Google API keys
+    "sk-[0-9A-Za-z]{48}"     # OpenAI API keys
+    "xoxb-[0-9]{11}-[0-9]{11}-[0-9A-Za-z]{24}"  # Slack bot tokens
+    "xoxp-[0-9]{11}-[0-9]{11}-[0-9A-Za-z]{24}"  # Slack user tokens
+    "https://hooks\.slack\.com/services/[A-Z0-9]+/[A-Z0-9]+/[A-Za-z0-9]+"  # Slack webhooks
+    "-----BEGIN (RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----"  # Private keys
+    "AKIA[0-9A-Z]{16}"       # AWS access keys
+    "ya29\.[0-9A-Za-z_-]+"   # Google OAuth tokens
+    "1/[0-9A-Za-z_-]{43}"    # Google refresh tokens
+    "AIzaSy[0-9A-Za-z_-]{33}" # Firebase API keys
+    "firebase.*api.*key"      # Firebase config
+    "mongodb://.*:.*@"        # MongoDB connection strings
+    "postgres://.*:.*@"       # PostgreSQL connection strings
+    "mysql://.*:.*@"          # MySQL connection strings
+    "redis://.*:.*@"          # Redis connection strings
+    "NEXT_PUBLIC_.*="         # Next.js public env vars (often contain secrets)
+    "REACT_APP_.*="           # React app env vars
+    "VITE_.*="                # Vite env vars
+    "\.env"                   # Any .env files
+    "password.*="             # Password fields
+    "secret.*="               # Secret fields
+    "token.*="                # Token fields
+    "key.*="                  # Key fields
+    "api.*key.*="             # API key fields
+)
+
+# Check commits being pushed for sensitive patterns
+while read local_ref local_sha remote_ref remote_sha; do
+    if [ "$local_sha" != "0000000000000000000000000000000000000000" ]; then
+        # Get list of files changed in this push
+        CHANGED_FILES=$(git diff --name-only "$remote_sha" "$local_sha" 2>/dev/null || git diff --name-only "$local_sha^" "$local_sha")
+        
+        for file in $CHANGED_FILES; do
+            # Skip binary files
+            if git diff --numstat "$remote_sha" "$local_sha" -- "$file" 2>/dev/null | grep -q "^-" || git diff --numstat "$local_sha^" "$local_sha" -- "$file" 2>/dev/null | grep -q "^-"; then
+                continue
+            fi
+            
+            # Check file content for sensitive patterns
+            for pattern in "${SENSITIVE_PATTERNS[@]}"; do
+                if git show "$local_sha:$file" 2>/dev/null | grep -iE "$pattern" >/dev/null 2>&1; then
+                    echo "${RED}❌ SECURITY VIOLATION DETECTED!${NC}"
+                    echo "${RED}File: $file${NC}"
+                    echo "${RED}Pattern: $pattern${NC}"
+                    echo "${RED}This file contains sensitive data and cannot be pushed!${NC}"
+                    echo ""
+                    echo "${YELLOW}Common sensitive data types:${NC}"
+                    echo "  • API keys (Google, OpenAI, AWS, etc.)"
+                    echo "  • Database connection strings"
+                    echo "  • Slack webhooks and tokens"
+                    echo "  • Private keys and certificates"
+                    echo "  • Environment variables with secrets"
+                    echo "  • Passwords and authentication tokens"
+                    echo ""
+                    echo "${YELLOW}To fix this:${NC}"
+                    echo "  1. Remove the sensitive data from the file"
+                    echo "  2. Add the file to .gitignore if it contains secrets"
+                    echo "  3. Use environment variables instead"
+                    echo "  4. Consider using a secrets management service"
+                    echo ""
+                    echo "${RED}🚨 PUSH BLOCKED: Sensitive data detected!${NC}"
+                    echo "${RED}Please remove all sensitive information before pushing.${NC}"
+                    exit 1
+                fi
+            done
+        done
+    fi
+done
+
+echo "${GREEN}✅ No sensitive data detected in commits${NC}"
+
+# Get the remote name and URL
+while read local_ref local_sha remote_ref remote_sha; do
+    if [ "$remote_ref" = "refs/heads/main" ] || [ "$remote_ref" = "refs/heads/master" ]; then
+        echo "${YELLOW}📤 Pushing to main/master branch - running full test suite${NC}"
+        
+        # Detect project type
+        REPO_NAME=$(basename "$(git rev-parse --show-toplevel)")
+        IS_TYPESCRIPT_PROJECT=false
+        
+        if [ -f "tsconfig.json" ] || [ -f "tsconfig.app.json" ] || [ -f "tsconfig.node.json" ]; then
+            IS_TYPESCRIPT_PROJECT=true
+        fi
+        
+        # Run TypeScript check
+        if [ "$IS_TYPESCRIPT_PROJECT" = true ]; then
+            # Permanently skip TypeScript checks for games (known issues)
+            if [ "$REPO_NAME" = "TrafficRun" ] || [ "$REPO_NAME" = "CrossyRoad" ] || [ "$REPO_NAME" = "SpaceShooter" ]; then
+                echo "${YELLOW}⚠️  Skipping TypeScript check for $REPO_NAME (games - permanent skip)${NC}"
+            else
+                if command -v npx >/dev/null 2>&1; then
+                    echo "${YELLOW}📝 Running TypeScript check...${NC}"
+                    
+                    TSC_OUTPUT=$(npx tsc --noEmit 2>&1)
+                    TSC_EXIT_CODE=$?
+                    
+                    if [ $TSC_EXIT_CODE -eq 0 ]; then
+                        echo "${GREEN}✅ TypeScript check passed${NC}"
+                    else
+                        echo "${RED}❌ TypeScript check failed${NC}"
+                        echo "${RED}TypeScript errors:${NC}"
+                        echo "$TSC_OUTPUT"
+                        echo "${RED}Please fix TypeScript errors before pushing.${NC}"
+                        exit 1
+                    fi
+                fi
+            fi
+        fi
+        
+        # Run linting
+        if [ -f "package.json" ]; then
+            if [ "$REPO_NAME" = "TrafficRun" ] || [ "$REPO_NAME" = "CrossyRoad" ] || [ "$REPO_NAME" = "SpaceShooter" ]; then
+                echo "${YELLOW}⚠️  Skipping linting for $REPO_NAME (games - permanent skip)${NC}"
+            else
+                if npm run lint --dry-run >/dev/null 2>&1; then
+                    echo "${YELLOW}🧹 Running linter...${NC}"
+                    
+                    LINT_OUTPUT=$(npm run lint 2>&1)
+                    LINT_EXIT_CODE=$?
+                    
+                    if [ $LINT_EXIT_CODE -eq 0 ]; then
+                        echo "${GREEN}✅ Linting passed${NC}"
+                    else
+                        echo "${RED}❌ Linting failed${NC}"
+                        echo "${RED}Linting errors:${NC}"
+                        echo "$LINT_OUTPUT"
+                        echo "${RED}Please fix linting errors before pushing.${NC}"
+                        exit 1
+                    fi
+                fi
+            fi
+        fi
+        
+        # Run Cypress tests
+        if [ -f "package.json" ] && [ -d "cypress" ]; then
+            if grep -q '"test"' package.json; then
+                # Check if dev server is running (with timeout)
+                if curl -s --max-time 2 http://localhost:3000 > /dev/null 2>&1; then
+                    echo "${YELLOW}🧪 Running Cypress tests...${NC}"
+                    
+                    # Load nvm if available
+                    if [ -s "$HOME/.nvm/nvm.sh" ]; then
+                        . "$HOME/.nvm/nvm.sh"
+                    fi
+                    
+                    TEST_OUTPUT=$(npm run test 2>&1)
+                    TEST_EXIT_CODE=$?
+                    
+                    if [ $TEST_EXIT_CODE -eq 0 ]; then
+                        echo "${GREEN}✅ All Cypress tests passed${NC}"
+                    else
+                        echo "${RED}❌ Cypress tests failed${NC}"
+                        echo "${RED}Test output:${NC}"
+                        echo "$TEST_OUTPUT"
+                        echo "${RED}Please fix failing tests before pushing.${NC}"
+                        exit 1
+                    fi
+                else
+                    echo "${YELLOW}⚠️  Dev server not running on port 3000 - skipping Cypress tests${NC}"
+                    echo "${YELLOW}💡 Consider running tests locally before pushing: npm run dev && npm run test${NC}"
+                fi
+            fi
+        fi
+        
+        # Check if pushing to Heroku
+        REMOTE_URL=$(git remote get-url origin 2>/dev/null || git remote get-url heroku 2>/dev/null)
+        if echo "$REMOTE_URL" | grep -q "heroku"; then
+            echo "${BLUE}🎯 Pushing to Heroku - ensuring production readiness${NC}"
+            
+            # Run build check for Heroku deployments
+            if [ -f "package.json" ] && npm run build --dry-run >/dev/null 2>&1; then
+                echo "${YELLOW}🔨 Running build check for Heroku...${NC}"
+                
+                BUILD_OUTPUT=$(npm run build 2>&1)
+                BUILD_EXIT_CODE=$?
+                
+                if [ $BUILD_EXIT_CODE -eq 0 ]; then
+                    echo "${GREEN}✅ Build check passed - ready for Heroku${NC}"
+                else
+                    echo "${RED}❌ Build check failed${NC}"
+                    echo "${RED}Build errors:${NC}"
+                    echo "$BUILD_OUTPUT"
+                    echo "${RED}Please fix build errors before pushing to Heroku.${NC}"
+                    exit 1
+                fi
+            fi
+        fi
+        
+        echo "${GREEN}🎉 All pre-push checks passed! Safe to push.${NC}"
+    else
+        echo "${YELLOW}📤 Pushing to feature branch - skipping full test suite${NC}"
+    fi
+done
+
+exit 0
