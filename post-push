@@ -1,0 +1,78 @@
+#!/bin/sh
+# .git/hooks/post-push
+#
+# This hook runs after a successful push.
+# For LifegutDietBuddy project, it runs Cypress tests against Heroku if the push was to Heroku.
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Get the remote name from the push (passed as first argument if available)
+# We'll detect Heroku by checking git remote
+REMOTE_NAME="$1"
+
+# Get the repo root and name
+if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
+    exit 0
+fi
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+REPO_NAME=$(basename "$REPO_ROOT")
+
+# Only run for LifegutDietBuddy project
+if [ "$REPO_NAME" != "LifegutDietBuddy" ]; then
+    exit 0
+fi
+
+# Check if we have a Heroku remote
+if ! git remote get-url heroku >/dev/null 2>&1; then
+    exit 0
+fi
+
+# Check if the push was to Heroku
+# Git doesn't pass remote name directly, so we check recent push history
+# or detect via HEROKU_POST_PUSH environment variable set by wrapper
+if [ "$HEROKU_POST_PUSH" = "true" ] || echo "$REMOTE_NAME" | grep -q "heroku"; then
+    echo "${BLUE}🚀 Heroku push detected - running Cypress tests against Heroku...${NC}"
+    echo ""
+    
+    # Change to repo directory
+    cd "$REPO_ROOT" || exit 0
+    
+    # Check if package.json exists and has test:heroku script
+    if [ ! -f "package.json" ]; then
+        echo "${YELLOW}⚠️  No package.json found, skipping Heroku tests${NC}"
+        exit 0
+    fi
+    
+    if ! grep -q '"test:heroku"' package.json; then
+        echo "${YELLOW}⚠️  No test:heroku script found in package.json, skipping Heroku tests${NC}"
+        exit 0
+    fi
+    
+    # Wait a bit for Heroku to deploy
+    echo "${YELLOW}⏳ Waiting 10 seconds for Heroku deployment to complete...${NC}"
+    sleep 10
+    
+    # Run Cypress tests against Heroku
+    echo "${YELLOW}🧪 Running Cypress tests against Heroku production...${NC}"
+    if npm run test:heroku 2>&1; then
+        echo ""
+        echo "${GREEN}✅ Heroku Cypress tests passed!${NC}"
+    else
+        EXIT_CODE=$?
+        echo ""
+        echo "${RED}❌ Heroku Cypress tests failed (exit code: $EXIT_CODE)${NC}"
+        echo "${YELLOW}⚠️  Note: This is a post-push hook - the push already succeeded.${NC}"
+        echo "${YELLOW}    Please check the test failures and fix if needed.${NC}"
+        # Don't fail the push, just report
+        exit 0
+    fi
+fi
+
+exit 0
+
