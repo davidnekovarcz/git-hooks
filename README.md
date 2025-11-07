@@ -1,10 +1,14 @@
-# Git Hooks Collection
+# Advanced Git Hooks for DevOps, Security & Code Quality 🚦
 
-A comprehensive set of Git hooks designed to enforce code quality, security, and consistent commit practices across your repositories.
+Blazing-fast, production-proven Git hooks to prevent secrets leakage, automate CI safety checks, enforce commit message standards, and instantly catch issues before they reach your remote. Ready to drop into any Node.js, TypeScript, or Rails project, these hooks protect your workflow and codebase from day one.
 
-## What is this?
+- **Block API keys, credentials, and secrets in every commit/push**
+- **Auto-verify TypeScript, lint errors, Cypress tests, and builds on the right git events**
+- **Enforce clear commit messages with [Conventional Commits](https://www.conventionalcommits.org) & [Gitmoji](https://gitmoji.dev/)**
 
-This repository contains a collection of Git hooks that automatically run checks and validations when you commit or push code. These hooks help prevent common mistakes like committing sensitive data, pushing broken code, or using inconsistent commit message formats.
+_Easy install. Zero config for most projects. Flexible, portable, and proven across production teams._
+
+---
 
 ## Installation
 
