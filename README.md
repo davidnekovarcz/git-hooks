@@ -1,12 +1,14 @@
-# Advanced Git Hooks for DevOps, Security & Code Quality 🚦
+# Git Hooks for Secure & Clean Code 🛡️✨
 
-Blazing-fast, production-proven Git hooks to prevent secrets leakage, automate CI safety checks, enforce commit message standards, and instantly catch issues before they reach your remote. Ready to drop into any Node.js, TypeScript, or Rails project, these hooks protect your workflow and codebase from day one.
+Blazingly fast, production-ready git hooks for modern teams:
 
-- **Block API keys, credentials, and secrets in every commit/push**
-- **Auto-verify TypeScript, lint errors, Cypress tests, and builds on the right git events**
-- **Enforce clear commit messages with [Conventional Commits](https://www.conventionalcommits.org) & [Gitmoji](https://gitmoji.dev/)**
+- 🛡️ **Block secrets, API keys & credentials in every commit/push**
+- 🚦 **Catch errors early: TypeScript, Lint, Build & Cypress tests auto-run at the right time**
+- 📝 **Beautiful commit messages — fully supports [Conventional Commits](https://www.conventionalcommits.org) & [Gitmoji](https://gitmoji.dev/)**
+- ⚡ Zero config for most Node, TypeScript & Rails projects
+- 🚀 Easy install, totally portable, and proven across real-world codebases
 
-_Easy install. Zero config for most projects. Flexible, portable, and proven across production teams._
+_Protect your main branch. Ship with confidence. Focus on building, not fixing leaks/reviewing noisy PRs._
 
 ---
 
