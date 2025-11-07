@@ -1,6 +1,6 @@
-# Git Hooks for Secure & Clean Code 🛡️✨
+# Git Hooks for Secure & Clean Code 🔐 (by ⚡Smarlify)
 
-Blazingly fast, production-ready git hooks for modern teams:
+- 🌟 Used by "Vibe-Coding Cleaning Specialists" — effectively guides your AI model to better results, never compromise security, and never push broken code
 
 - 🛡️ **Block secrets, API keys & credentials in every commit/push**
 - 🚦 **Catch errors early: TypeScript, Lint, Build & Cypress tests auto-run at the right time**
