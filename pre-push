@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # .git/hooks/pre-push
 #
 # This hook is executed before a push is made.
