@@ -13,6 +13,21 @@ NC='\033[0m' # No Color
 
 echo "${BLUE}🚀 Running pre-push checks...${NC}"
 
+# CRITICAL: Prevent direct pushes to main/master branches
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+if [ "$CURRENT_BRANCH" = "main" ] || [ "$CURRENT_BRANCH" = "master" ]; then
+    echo "${RED}❌ ERROR: Direct pushes to '$CURRENT_BRANCH' branch are not allowed!${NC}"
+    echo "${RED}Please create a feature branch and use a pull request instead.${NC}"
+    echo ""
+    echo "${YELLOW}To fix this:${NC}"
+    echo "  1. Create a new branch: git checkout -b feature/your-feature-name"
+    echo "  2. Make your changes and commit"
+    echo "  3. Push the branch: git push origin feature/your-feature-name"
+    echo "  4. Create a pull request to merge into $CURRENT_BRANCH"
+    echo ""
+    exit 1
+fi
+
 # Load shared functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/shared/security-check.sh"
