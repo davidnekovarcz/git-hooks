@@ -13,9 +13,12 @@ NC='\033[0m' # No Color
 
 echo "${BLUE}🚀 Running pre-push checks...${NC}"
 
-# CRITICAL: Prevent direct pushes to main/master branches
+# CRITICAL: Prevent direct pushes to main/master branches (except Heroku deployments)
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-if [ "$CURRENT_BRANCH" = "main" ] || [ "$CURRENT_BRANCH" = "master" ]; then
+REMOTE_NAME="$1"
+
+# Allow pushes to Heroku remote (for deployments)
+if [ "$REMOTE_NAME" != "heroku" ] && ([ "$CURRENT_BRANCH" = "main" ] || [ "$CURRENT_BRANCH" = "master" ]); then
     echo "${RED}❌ ERROR: Direct pushes to '$CURRENT_BRANCH' branch are not allowed!${NC}"
     echo "${RED}Please create a feature branch and use a pull request instead.${NC}"
     echo ""
