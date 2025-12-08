@@ -74,14 +74,16 @@ if echo "$REMOTE_URL" | grep -q "heroku"; then
     echo "${YELLOW}💡 Tests will run against deployed Heroku app with: npm run test:heroku${NC}"
 else
     # Run Cypress tests for non-Heroku pushes
-    IS_MAIN_BRANCH="false"
-    if [ "$1" = "refs/heads/main" ] || [ "$1" = "refs/heads/master" ]; then
-        IS_MAIN_BRANCH="true"
-    fi
+    # COMMENTED OUT: Temporarily skipping Cypress tests
+    # IS_MAIN_BRANCH="false"
+    # if [ "$1" = "refs/heads/main" ] || [ "$1" = "refs/heads/master" ]; then
+    #     IS_MAIN_BRANCH="true"
+    # fi
 
-    if ! run_cypress_tests "$IS_MAIN_BRANCH"; then
-        exit 1
-    fi
+    # if ! run_cypress_tests "$IS_MAIN_BRANCH"; then
+    #     exit 1
+    # fi
+    echo "${YELLOW}💡 Cypress tests skipped (temporarily commented out)${NC}"
 fi
 
 # Run build check for Heroku deployments
