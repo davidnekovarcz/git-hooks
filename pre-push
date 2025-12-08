@@ -65,22 +65,29 @@ IS_TYPESCRIPT_PROJECT=$(echo "$PROJECT_INFO" | cut -d'|' -f3)
 # Skip TypeScript and linting checks (already run in pre-commit)
 echo "${YELLOW}💡 TypeScript and linting checks already passed in pre-commit${NC}"
 
-# Run Cypress tests
-IS_MAIN_BRANCH="false"
-if [ "$1" = "refs/heads/main" ] || [ "$1" = "refs/heads/master" ]; then
-    IS_MAIN_BRANCH="true"
-fi
-
-if ! run_cypress_tests "$IS_MAIN_BRANCH"; then
-    exit 1
-fi
-
-# Check if pushing to Heroku
-REMOTE_URL=$(git remote get-url origin 2>/dev/null || git remote get-url heroku 2>/dev/null)
+# Check if pushing to Heroku (skip Cypress tests for Heroku deployments)
+REMOTE_URL=$(git remote get-url "$REMOTE_NAME" 2>/dev/null || git remote get-url heroku 2>/dev/null)
+IS_HEROKU_PUSH=false
 if echo "$REMOTE_URL" | grep -q "heroku"; then
-    echo "${BLUE}🎯 Pushing to Heroku - ensuring production readiness${NC}"
+    IS_HEROKU_PUSH=true
+    echo "${BLUE}🎯 Pushing to Heroku - skipping local Cypress tests${NC}"
+    echo "${YELLOW}💡 Tests will run against deployed Heroku app with: npm run test:heroku${NC}"
+else
+    # Run Cypress tests for non-Heroku pushes
+    IS_MAIN_BRANCH="false"
+    if [ "$1" = "refs/heads/main" ] || [ "$1" = "refs/heads/master" ]; then
+        IS_MAIN_BRANCH="true"
+    fi
+
+    if ! run_cypress_tests "$IS_MAIN_BRANCH"; then
+        exit 1
+    fi
+fi
+
+# Run build check for Heroku deployments
+if [ "$IS_HEROKU_PUSH" = true ]; then
+    echo "${BLUE}🎯 Ensuring production readiness...${NC}"
     
-    # Run build check for Heroku deployments
     if ! run_build_check; then
         exit 1
     fi

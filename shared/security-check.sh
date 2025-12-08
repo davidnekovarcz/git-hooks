@@ -56,8 +56,20 @@ check_files_for_sensitive_data() {
             continue
         fi
         
+        # Skip package-lock.json and similar lock files from Google refresh token check
+        # (they contain legitimate hash values that can match the pattern)
+        local skip_google_token_check=false
+        if [[ "$file" == *"package-lock.json"* ]] || [[ "$file" == *"yarn.lock"* ]] || [[ "$file" == *"pnpm-lock.yaml"* ]]; then
+            skip_google_token_check=true
+        fi
+        
         # Check file content for sensitive patterns
         for pattern in "${SENSITIVE_PATTERNS[@]}"; do
+            # Skip Google refresh token pattern for lock files
+            if [ "$skip_google_token_check" = true ] && [ "$pattern" = "1/[0-9A-Za-z_-]{43}" ]; then
+                continue
+            fi
+            
             if git show ":$file" 2>/dev/null | grep -iE "$pattern" >/dev/null 2>&1; then
                 echo "${RED}❌ SECURITY VIOLATION DETECTED!${NC}"
                 echo "${RED}File: $file${NC}"
