@@ -141,7 +141,7 @@ run_tests() {
     return 1
 }
 
-# Pre-push Kaloko walk when the repo opted in (config + npm script). Local only — not a share.
+# Kaloko walk when a non-Heroku push updates main or master. Local only — not a share.
 run_kaloko_if_available() {
     if ! has_kaloko; then
         echo "${YELLOW}⚠️  No Kaloko smoke script, skipping${NC}"
@@ -165,6 +165,6 @@ run_kaloko_if_available() {
     echo "${RED}❌ Kaloko failed${NC}"
     echo "${RED}Kaloko output:${NC}"
     echo "$KALOKO_OUTPUT"
-    echo "${RED}Please fix the Kaloko walk before pushing.${NC}"
+    echo "${RED}Please fix the Kaloko walk before merging.${NC}"
     return 1
 }
