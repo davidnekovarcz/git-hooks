@@ -35,12 +35,6 @@ has_root_tsconfig() {
     [ -f "tsconfig.json" ] || [ -f "tsconfig.app.json" ] || [ -f "tsconfig.node.json" ]
 }
 
-# Kaloko is present when the repo has a config and a project script to run it.
-has_kaloko() {
-    [ -f "kaloko.config.yml" ] || return 1
-    has_npm_script kaloko:smoke || has_npm_script kaloko
-}
-
 # Prefer `npm run tsc` when present; otherwise bare `npx tsc --noEmit` if a root tsconfig exists.
 run_typescript_check() {
     if has_npm_script tsc; then
@@ -138,33 +132,5 @@ run_tests() {
     echo "${RED}Test output:${NC}"
     echo "$TEST_OUTPUT"
     echo "${RED}Please fix failing tests before pushing.${NC}"
-    return 1
-}
-
-# Kaloko walk when a non-Heroku push updates main or master. Local only — not a share.
-run_kaloko_if_available() {
-    if ! has_kaloko; then
-        echo "${YELLOW}⚠️  No Kaloko smoke script, skipping${NC}"
-        return 0
-    fi
-
-    local script="kaloko:smoke"
-    if ! has_npm_script kaloko:smoke; then
-        script="kaloko"
-    fi
-
-    echo "${YELLOW}🧪 Running Kaloko (npm run ${script})...${NC}"
-    KALOKO_OUTPUT=$(npm run "$script" 2>&1)
-    KALOKO_EXIT_CODE=$?
-
-    if [ $KALOKO_EXIT_CODE -eq 0 ]; then
-        echo "${GREEN}✅ Kaloko passed${NC}"
-        return 0
-    fi
-
-    echo "${RED}❌ Kaloko failed${NC}"
-    echo "${RED}Kaloko output:${NC}"
-    echo "$KALOKO_OUTPUT"
-    echo "${RED}Please fix the Kaloko walk before merging.${NC}"
     return 1
 }

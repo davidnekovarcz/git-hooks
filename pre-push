@@ -49,18 +49,11 @@ source "$SCRIPT_DIR/shared/personal-data-check.sh"
 source "$SCRIPT_DIR/shared/quality-checks.sh"
 
 # CRITICAL: Check for sensitive data in commits being pushed.
-# Kaloko runs only when this push updates main or master. Feature-branch
-# pushes and Heroku deploys skip it. Deleting a remote branch does not count.
+# Deleting a remote branch does not count.
 COMMITS_TO_CHECK=""
-PUSHES_MAIN=false
 while read local_ref local_sha remote_ref remote_sha; do
     if [ "$local_sha" != "0000000000000000000000000000000000000000" ]; then
         COMMITS_TO_CHECK="$COMMITS_TO_CHECK $local_sha"
-        case "$remote_ref" in
-            refs/heads/main|refs/heads/master)
-                PUSHES_MAIN=true
-                ;;
-        esac
     fi
 done
 
@@ -91,13 +84,6 @@ if [ "$IS_HEROKU_PUSH" = true ]; then
 else
     if ! run_tests; then
         exit 1
-    fi
-    if [ "$PUSHES_MAIN" = true ]; then
-        if ! run_kaloko_if_available; then
-            exit 1
-        fi
-    else
-        echo "${YELLOW}⚠️  Skipping Kaloko (runs only when merging to main or master)${NC}"
     fi
 fi
 

@@ -112,11 +112,8 @@ Nested apps (e.g. code under `web/`) should expose root npm scripts that delegat
 - Skipped for Heroku pushes (deploy first, then test the deployed app if needed)
 
 #### Kaloko
-- When `kaloko.config.yml` exists and the root `package.json` has `kaloko:smoke` (or `kaloko`), pre-push runs that script only if the push updates `main` or `master` on a remote other than Heroku
-- Feature-branch pushes skip Kaloko
-- Heroku pushes skip Kaloko the same way they skip unit tests
-- Repos without Kaloko skip this check
-- A merge button on GitHub does not execute this laptop hook
+- The laptop hooks do not run Kaloko
+- Each game that has Kaloko walks its Heroku app from GitHub Actions on a pull request
 
 #### Build Checks
 - Runs `npm run build` when pushing to a Heroku remote and a `build` script exists
