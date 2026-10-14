@@ -121,74 +121,128 @@ show_gitmoji_help() {
     echo ""
 }
 
-# Function to prompt for commit message
+# Suggest emoji + conventional type from staged paths (space-separated: "EMOJI TYPE")
+suggest_from_staged() {
+    STAGED_FILES=$(git diff --cached --name-only)
+
+    if echo "$STAGED_FILES" | grep -q "\.md$"; then
+        echo "📝 docs"
+    elif echo "$STAGED_FILES" | grep -q "test"; then
+        echo "✅ test"
+    elif echo "$STAGED_FILES" | grep -q "style\|css\|scss"; then
+        echo "🎨 style"
+    elif echo "$STAGED_FILES" | grep -q "package\.json\|yarn\.lock\|package-lock\.json"; then
+        echo "⬆️ build"
+    else
+        echo "✨ feat"
+    fi
+}
+
+# True when the first line already starts with a Gitmoji (emoji or :shortcode:)
+has_gitmoji_prefix() {
+    FIRST="$1"
+    case "$FIRST" in
+        :[a-zA-Z0-9_+-]*:*)
+            return 0
+            ;;
+    esac
+    # Non-ASCII lead-in (typical Unicode emoji) — not a conventional-commit type letter
+    FIRST_BYTE=$(printf '%s' "$FIRST" | od -An -tx1 | awk '{print $1; exit}')
+    case "$FIRST_BYTE" in
+        ''|2[0-9a-f]|3[0-9a-f]|4[0-9a-f]|5[0-9a-f]|6[0-9a-f]|7[0-9a-f])
+            return 1
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+}
+
+# For git commit -m / -F: prefix a suggested Gitmoji when the message has none.
+# Does not rewrite merge/squash/amend messages, and does not replace an existing emoji.
+auto_prefix_gitmoji() {
+    MSG_FILE="$1"
+    FIRST_LINE=$(head -n1 "$MSG_FILE")
+    TRIMMED=$(printf '%s' "$FIRST_LINE" | sed 's/^[[:space:]]*//')
+
+    if [ -z "$TRIMMED" ]; then
+        return 0
+    fi
+
+    if has_gitmoji_prefix "$TRIMMED"; then
+        return 0
+    fi
+
+    SUGGESTION=$(suggest_from_staged)
+    SUGGESTED_EMOJI=$(printf '%s' "$SUGGESTION" | awk '{print $1}')
+
+    {
+        printf '%s %s\n' "$SUGGESTED_EMOJI" "$TRIMMED"
+        tail -n +2 "$MSG_FILE"
+    } > "$MSG_FILE.tmp"
+    mv "$MSG_FILE.tmp" "$MSG_FILE"
+}
+
+# Function to prompt for commit message (interactive editor path only)
 prompt_commit_message() {
+    MSG_FILE="$1"
+
     echo "🎯 Gitmoji & Conventional Commits Helper"
     echo "=========================================="
     echo ""
-    
-    # Show help if requested
-    if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+
+    if [ "$MSG_FILE" = "--help" ] || [ "$MSG_FILE" = "-h" ]; then
         show_gitmoji_help
         exit 0
     fi
-    
-    # Get current branch
+
     BRANCH=$(git rev-parse --abbrev-ref HEAD)
-    
-    # Get staged files
     STAGED_FILES=$(git diff --cached --name-only)
-    
+
     echo "📋 Current branch: $BRANCH"
     echo "📁 Staged files:"
     echo "$STAGED_FILES" | sed 's/^/  - /'
     echo ""
-    
-    # Suggest commit type based on staged files
-    if echo "$STAGED_FILES" | grep -q "\.md$"; then
-        SUGGESTED_TYPE="docs"
-        SUGGESTED_EMOJI="📝"
-    elif echo "$STAGED_FILES" | grep -q "test"; then
-        SUGGESTED_TYPE="test"
-        SUGGESTED_EMOJI="✅"
-    elif echo "$STAGED_FILES" | grep -q "style\|css\|scss"; then
-        SUGGESTED_TYPE="style"
-        SUGGESTED_EMOJI="🎨"
-    elif echo "$STAGED_FILES" | grep -q "package\.json\|yarn\.lock\|package-lock\.json"; then
-        SUGGESTED_TYPE="build"
-        SUGGESTED_EMOJI="⬆️"
-    else
-        SUGGESTED_TYPE="feat"
-        SUGGESTED_EMOJI="✨"
-    fi
-    
+
+    SUGGESTION=$(suggest_from_staged)
+    SUGGESTED_EMOJI=$(printf '%s' "$SUGGESTION" | awk '{print $1}')
+    SUGGESTED_TYPE=$(printf '%s' "$SUGGESTION" | awk '{print $2}')
+
     echo "💡 Suggested: $SUGGESTED_EMOJI $SUGGESTED_TYPE"
     echo ""
-    
+
     # Prompt for commit message
     read -p "🎯 Enter your commit message (or 'help' for gitmoji reference): " COMMIT_MSG
-    
+
     if [ "$COMMIT_MSG" = "help" ]; then
         show_gitmoji_help
-        prompt_commit_message
+        prompt_commit_message "$MSG_FILE"
         return
     fi
-    
+
     # If no message provided, use suggested
     if [ -z "$COMMIT_MSG" ]; then
         COMMIT_MSG="$SUGGESTED_TYPE: update staged files"
     fi
-    
+
     # Write to commit message file
-    echo "$SUGGESTED_EMOJI $COMMIT_MSG" > "$1"
+    echo "$SUGGESTED_EMOJI $COMMIT_MSG" > "$MSG_FILE"
 }
 
 # Main execution — Git passes: prepare-commit-msg <commit-msg-file> [<source> [<sha>]]
-# Skip amend/merge/squash/commit -m / -F sources so we don't overwrite an existing message.
+# - message (-m / -F): auto-prefix Gitmoji when missing (keeps agent/HEREDOC text)
+# - merge / squash / commit (amend -c/-C): leave the existing message alone
+# - empty / template: interactive helper
 COMMIT_MSG_FILE="$1"
 COMMIT_SOURCE="${2:-}"
 case "$COMMIT_SOURCE" in
-    merge|squash|commit|message) ;;
+    merge|squash|commit)
+        ;;
+    message)
+        if [ -n "$COMMIT_MSG_FILE" ] && [ -f "$COMMIT_MSG_FILE" ]; then
+            auto_prefix_gitmoji "$COMMIT_MSG_FILE"
+        fi
+        ;;
     *)
         if [ -n "$COMMIT_MSG_FILE" ] && [ -f "$COMMIT_MSG_FILE" ]; then
             prompt_commit_message "$COMMIT_MSG_FILE"

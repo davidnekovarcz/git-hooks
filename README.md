@@ -124,21 +124,30 @@ Nested apps (e.g. code under `web/`) should expose root npm scripts that delegat
 
 ### 🎯 Commit Message Helper (`prepare-commit-msg`)
 
-Interactive helper for creating consistent commit messages using Gitmoji and Conventional Commits format.
+Helper for consistent commit messages using Gitmoji and Conventional Commits format.
 
 #### Features:
 - **Gitmoji Support**: Suggests appropriate emojis based on staged files
 - **Conventional Commits**: Encourages format like `feat(scope): description`
 - **Smart Suggestions**: Analyzes staged files and suggests commit type
-- **Interactive Prompt**: Guides you through creating a proper commit message
-- **Help System**: Type `help` to see full Gitmoji reference
+- **Interactive Prompt**: On `git commit` (editor path), guides you through the message
+- **Non-interactive auto-prefix**: On `git commit -m` / `-F`, prefixes a suggested Gitmoji when the message does not already start with one (emoji or `:shortcode:`). Agent HEREDOC commits are covered.
+- **Help System**: Type `help` in the interactive prompt to see the full Gitmoji reference
 
-Skipped for `merge` / `squash` / `commit -m` / `-F` sources so existing messages are not overwritten.
+Left alone for `merge` / `squash` / amend (`-c` / `-C` / `--amend`) so Git’s own messages are not rewritten. Messages that already start with a Gitmoji are not changed.
 
 #### Usage:
 ```bash
+# Interactive: prompt + suggested emoji
 git commit
-# Hook will prompt you with suggestions based on your staged files
+
+# Non-interactive (agents / scripts): keep your text; emoji is added if missing
+git commit -m "$(cat <<'EOF'
+feat(auth): add OAuth2 login
+
+EOF
+)"
+# → ✨ feat(auth): add OAuth2 login
 ```
 
 #### Examples:
@@ -168,8 +177,8 @@ git commit
 ### Prepare-Commit-Msg Hook
 1. 📋 Analyzes staged files
 2. 💡 Suggests appropriate Gitmoji and commit type
-3. 🎯 Prompts for commit message
-4. ✏️ Writes formatted message to commit file
+3. 🎯 Interactive: prompts for the commit message; or `-m`/`-F`: auto-prefixes Gitmoji when missing
+4. ✏️ Writes the formatted message to the commit file
 
 ## Bypassing Hooks (Not Recommended)
 
