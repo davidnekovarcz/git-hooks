@@ -1,0 +1,31 @@
+#!/bin/bash
+# post-commit
+#
+# Remember that the open pull request description is stale.
+# Do not call GitHub from here. The branch may not be on the remote yet.
+# post-push updates an existing pull request after a successful push.
+
+if [ -t 1 ]; then
+    YELLOW='\033[1;33m'
+    NC='\033[0m'
+else
+    YELLOW=''
+    NC=''
+fi
+
+branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || exit 0
+
+case "$branch" in
+    HEAD|main|master)
+        exit 0
+        ;;
+esac
+
+sha=$(git rev-parse HEAD 2>/dev/null) || exit 0
+marker=$(git rev-parse --git-path pr-description-stale 2>/dev/null) || exit 0
+
+if printf '%s %s\n' "$branch" "$sha" > "$marker" 2>/dev/null; then
+    echo "${YELLOW}💡 Pull request description is stale until a successful push. GitHub is not called from post-commit.${NC}"
+fi
+
+exit 0

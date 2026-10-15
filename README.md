@@ -27,7 +27,9 @@ _Protect your main branch. Ship with confidence. Focus on building, not fixing l
    ```bash
    cd /path/to/your/repo
    cp ~/Development/__git-hooks/pre-commit .git/hooks/
+   cp ~/Development/__git-hooks/post-commit .git/hooks/
    cp ~/Development/__git-hooks/pre-push .git/hooks/
+   cp ~/Development/__git-hooks/post-push .git/hooks/
    cp ~/Development/__git-hooks/prepare-commit-msg .git/hooks/
    cp -r ~/Development/__git-hooks/shared .git/hooks/
    ```
@@ -35,7 +37,9 @@ _Protect your main branch. Ship with confidence. Focus on building, not fixing l
 3. **Make hooks executable**:
    ```bash
    chmod +x .git/hooks/pre-commit
+   chmod +x .git/hooks/post-commit
    chmod +x .git/hooks/pre-push
+   chmod +x .git/hooks/post-push
    chmod +x .git/hooks/prepare-commit-msg
    chmod +x .git/hooks/shared/*.sh
    ```
@@ -63,12 +67,16 @@ fi
 cd "$REPO_DIR" || exit 1
 
 cp "$HOOKS_DIR/pre-commit" .git/hooks/
+cp "$HOOKS_DIR/post-commit" .git/hooks/
 cp "$HOOKS_DIR/pre-push" .git/hooks/
+cp "$HOOKS_DIR/post-push" .git/hooks/
 cp "$HOOKS_DIR/prepare-commit-msg" .git/hooks/
 cp -r "$HOOKS_DIR/shared" .git/hooks/
 
 chmod +x .git/hooks/pre-commit
+chmod +x .git/hooks/post-commit
 chmod +x .git/hooks/pre-push
+chmod +x .git/hooks/post-push
 chmod +x .git/hooks/prepare-commit-msg
 chmod +x .git/hooks/shared/*.sh
 
@@ -122,6 +130,19 @@ Nested apps (e.g. code under `web/`) should expose root npm scripts that delegat
 - Runs `npm run build` when pushing to a Heroku remote and a `build` script exists
 - Blocks the push if the build fails
 
+`pre-push` does not call GitHub. After the checks above pass, it starts `post-push` in the background. That refresh cannot block or fail the push.
+
+### ✏️ Open pull request text (`post-commit` & `post-push`)
+
+Git does not provide a post-push hook. `pre-push` starts `post-push` only after the secret, `main` / `master`, test, and build checks have passed.
+
+- **`post-commit`**: remembers that the open pull request description is stale. It does not call GitHub, because the branch may not be on the remote yet.
+- **`post-push`**: after the remote feature branch shows the pushed commit, updates the title and body of an already open pull request. The summary comes from the branch commits. A test plan already on the pull request is kept. If there is no pull request, none is created.
+- Skips Heroku deploys and `main` / `master`.
+- If GitHub cannot be reached, the push still stands.
+
+With `core.hooksPath`, both files are picked up from this directory. If you copy hooks into `.git/hooks/` instead, copy `post-commit` and `post-push` next to `pre-push`.
+
 ### 🎯 Commit Message Helper (`prepare-commit-msg`)
 
 Helper for consistent commit messages using Gitmoji and Conventional Commits format.
@@ -166,13 +187,25 @@ EOF
 4. 🧹 Linting (if available)
 5. ✅ Commit proceeds if all checks pass
 
+### Post-Commit Hook
+1. 📝 Remember that the open pull request description is stale
+2. 🚫 Do not call GitHub (the branch may not be on the remote yet)
+
 ### Pre-Push Hook
 1. 🔒 Block pushes to `main` / `master` (except remote named `heroku`)
 2. 🔒 Security check on commits being pushed
 3. 🧪 `npm test` (non-Heroku, if available)
 4. 🧪 Kaloko smoke only when the push updates `main` or `master` (not a feature branch, not Heroku)
 5. 🔨 Build check (Heroku only, if available)
-6. ✅ Push proceeds if all checks pass
+6. 📝 Schedule a pull-request refresh without calling GitHub and without waiting on it
+7. ✅ Push proceeds if all checks pass
+
+### Post-Push
+Started by `pre-push` in the background. Git does not invoke this file itself.
+1. ⏳ Wait until the remote feature branch shows the pushed commit
+2. ✏️ If a pull request is already open, update its title and body (summary of why, short test plan)
+3. 🚫 Do not create a pull request
+4. 🚫 A GitHub failure does not fail the push
 
 ### Prepare-Commit-Msg Hook
 1. 📋 Analyzes staged files

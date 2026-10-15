@@ -48,17 +48,59 @@ source "$SCRIPT_DIR/shared/personal-data-check.sh"
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/shared/quality-checks.sh"
 
+# Launch post-push detached. pre-push must not call GitHub and must not wait
+# on the GitHub API. The push still runs the secret, main/master, and test checks.
+launch_pr_refresh() {
+    local hook line sha branch launched
+    hook="$SCRIPT_DIR/post-push"
+    [ -f "$hook" ] || return 0
+    [ -n "$PR_REFRESH_REFS" ] || return 0
+    launched=0
+
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        sha="${line%% *}"
+        branch="${line#* }"
+        launched=1
+        if command -v python3 >/dev/null 2>&1; then
+            # Double-fork into a new session so git does not wait on this process.
+            python3 -c 'import os, signal, sys
+signal.signal(signal.SIGHUP, signal.SIG_IGN)
+if os.fork() > 0:
+    os._exit(0)
+os.setsid()
+if os.fork() > 0:
+    os._exit(0)
+os.execv(sys.argv[1], sys.argv[1:])' "$hook" "$REMOTE_NAME" "$sha" "$branch" </dev/null >/dev/null 2>&1 || true
+        elif command -v perl >/dev/null 2>&1; then
+            perl -e 'use POSIX; $SIG{HUP}="IGNORE"; fork and exit; setsid; fork and exit; exec @ARGV or exit 0' "$hook" "$REMOTE_NAME" "$sha" "$branch" </dev/null >/dev/null 2>&1 || true
+        else
+            nohup "$hook" "$REMOTE_NAME" "$sha" "$branch" </dev/null >/dev/null 2>&1 &
+            disown $! 2>/dev/null || true
+        fi
+    done <<< "$PR_REFRESH_REFS"
+
+    if [ "$launched" -eq 1 ]; then
+        echo "${YELLOW}💡 Open pull request text refreshes after this push. GitHub is not contacted from pre-push.${NC}"
+    fi
+    return 0
+}
+
 # CRITICAL: Check for sensitive data in commits being pushed.
 # Kaloko runs only when this push updates main or master. Feature-branch
 # pushes and Heroku deploys skip it. Deleting a remote branch does not count.
 COMMITS_TO_CHECK=""
 PUSHES_MAIN=false
-while read local_ref local_sha remote_ref remote_sha; do
+PR_REFRESH_REFS=""
+while read -r local_ref local_sha remote_ref remote_sha; do
     if [ "$local_sha" != "0000000000000000000000000000000000000000" ]; then
         COMMITS_TO_CHECK="$COMMITS_TO_CHECK $local_sha"
         case "$remote_ref" in
             refs/heads/main|refs/heads/master)
                 PUSHES_MAIN=true
+                ;;
+            refs/heads/*)
+                PR_REFRESH_REFS="${PR_REFRESH_REFS}${local_sha} ${remote_ref#refs/heads/}"$'\n'
                 ;;
         esac
     fi
@@ -99,6 +141,11 @@ else
     else
         echo "${YELLOW}⚠️  Skipping Kaloko (runs only when merging to main or master)${NC}"
     fi
+fi
+
+# Do not call GitHub here. A failed or slow refresh must not block the push.
+if [ "$IS_HEROKU_PUSH" != true ]; then
+    launch_pr_refresh || true
 fi
 
 echo "${GREEN}🎉 All pre-push checks passed!${NC}"
