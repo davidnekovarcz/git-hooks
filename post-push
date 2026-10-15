@@ -1,0 +1,236 @@
+#!/bin/bash
+# post-push
+#
+# Git does not invoke this file. pre-push starts it in the background after
+# the secret, main/master, test, and build checks have passed, and does not
+# wait for it. Update the open pull request for a feature branch once the
+# remote shows the pushed commit. Do not create a pull request. A GitHub
+# failure must not fail the push (this script's exit code is ignored).
+
+log_pr() {
+    local path
+    path=$(git rev-parse --git-path post-push-pr.log 2>/dev/null) || return 0
+    printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$path" 2>/dev/null || true
+}
+
+clear_stale_marker() {
+    local marker
+    marker=$(git rev-parse --git-path pr-description-stale 2>/dev/null) || return 0
+    rm -f "$marker" 2>/dev/null || true
+}
+
+strip_leading_mark() {
+    local s="$1"
+    if [[ "$s" =~ ^:([a-z0-9_]+):[[:space:]]*(.*)$ ]]; then
+        printf '%s' "${BASH_REMATCH[2]}"
+        return 0
+    fi
+    printf '%s' "$s" | LC_ALL=C sed -E 's/^([^[:alnum:][:space:][:punct:]])+[[:space:]]+//'
+}
+
+trim_edges() {
+    local s="$1"
+    s="${s#"${s%%[![:space:]]*}"}"
+    s="${s%"${s##*[![:space:]]}"}"
+    printf '%s' "$s"
+}
+
+human_branch_title() {
+    local b="$1" first rest
+    case "$b" in
+        feature/*|fix/*|docs/*|chore/*|test/*|hotfix/*)
+            b="${b#*/}"
+            ;;
+    esac
+    b="${b//-/ }"
+    b="${b//\// }"
+    first=$(printf '%s' "$b" | cut -c1 | tr '[:lower:]' '[:upper:]')
+    rest=$(printf '%s' "$b" | cut -c2-)
+    printf '%s%s' "$first" "$rest"
+}
+
+wait_for_remote() {
+    local remote="$1" branch="$2" sha="$3"
+    local i remote_line remote_sha
+    i=0
+    while [ "$i" -lt 60 ]; do
+        remote_line=$(git ls-remote "$remote" "refs/heads/${branch}" 2>/dev/null || true)
+        remote_sha=$(printf '%s\n' "$remote_line" | awk 'NR==1 {print $1}')
+        if [ "$remote_sha" = "$sha" ]; then
+            return 0
+        fi
+        i=$((i + 1))
+        sleep 2
+    done
+    return 1
+}
+
+# Sets PR_TITLE and PR_BODY. Summary comes from the branch commits.
+# An existing "## Test plan" section is kept.
+render_pr_update() {
+    local local_sha="$1"
+    local base_name="$2"
+    local branch="$3"
+    local remote="$4"
+    local existing_body="$5"
+    local base_ref="" merge_base="" range=""
+    local subject body clean cleaned_body line
+    local bullets="" title="" count=0
+    local testplan safe_base log_cmd
+
+    if [ "$existing_body" = "null" ]; then
+        existing_body=""
+    fi
+    existing_body=${existing_body//$'\r'/}
+
+    if [ -n "$base_name" ]; then
+        if git rev-parse --verify --quiet "refs/remotes/${remote}/${base_name}^{commit}" >/dev/null; then
+            base_ref="refs/remotes/${remote}/${base_name}"
+        elif git rev-parse --verify --quiet "refs/remotes/origin/${base_name}^{commit}" >/dev/null; then
+            base_ref="refs/remotes/origin/${base_name}"
+        elif git rev-parse --verify --quiet "refs/heads/${base_name}^{commit}" >/dev/null; then
+            base_ref="refs/heads/${base_name}"
+        fi
+    fi
+
+    if [ -n "$base_ref" ]; then
+        merge_base=$(git merge-base "$local_sha" "$base_ref" 2>/dev/null || true)
+        if [ -n "$merge_base" ]; then
+            range="${merge_base}..${local_sha}"
+        fi
+    fi
+
+    if [ -n "$range" ]; then
+        log_cmd=(git log --reverse -n 30 --no-merges --format='%s%x00%b%x00' "$range")
+    else
+        log_cmd=(git log -1 --no-merges --format='%s%x00%b%x00' "$local_sha")
+    fi
+
+    while IFS= read -r -d '' subject && IFS= read -r -d '' body; do
+        clean=$(strip_leading_mark "$subject")
+        clean=$(printf '%s' "$clean" | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//')
+        if [ -z "$clean" ]; then
+            continue
+        fi
+        if [ -z "$title" ]; then
+            title="$clean"
+        fi
+        count=$((count + 1))
+        bullets="${bullets}- ${clean}"$'\n'
+        cleaned_body=$(trim_edges "$body")
+        if [ -n "$(printf '%s' "$cleaned_body" | tr -d '[:space:]')" ]; then
+            while IFS= read -r line; do
+                line=$(trim_edges "$line")
+                case "$line" in
+                    ''|Co-authored-by:*|Signed-off-by:*|Made-with:*)
+                        continue
+                        ;;
+                esac
+                bullets="${bullets}  ${line}"$'\n'
+            done <<PR_REFRESH_BODY_END
+$cleaned_body
+PR_REFRESH_BODY_END
+            bullets="${bullets}"$'\n'
+        fi
+    done < <("${log_cmd[@]}")
+
+    if [ -z "$title" ]; then
+        title=$(human_branch_title "$branch")
+    fi
+    if [ -z "$title" ]; then
+        title="$branch"
+    fi
+    if [ "$(printf '%s' "$title" | wc -m | tr -d ' ')" -gt 180 ]; then
+        if command -v python3 >/dev/null 2>&1; then
+            title=$(printf '%s' "$title" | python3 -c 'import sys; s=sys.stdin.read(); print(s[:177].rstrip()+"...")')
+        fi
+    fi
+    if [ "$count" -eq 0 ]; then
+        bullets="- ${title}"$'\n'
+    fi
+    bullets="$(trim_edges "$bullets")"$'\n'
+
+    testplan=$(printf '%s\n' "$existing_body" | sed -n '/^## [Tt]est [Pp]lan[[:space:]]*$/,$p')
+    if [ -z "$(printf '%s' "$testplan" | tr -d '[:space:]')" ]; then
+        testplan="## Test plan
+- [ ] Run this repo's tests.
+- [ ] Check the behaviour described in the summary."
+    fi
+    testplan=$(trim_edges "$testplan")
+
+    PR_TITLE="$title"
+    PR_BODY="## Summary
+
+${bullets}"
+    if [ -n "$base_name" ]; then
+        safe_base=${base_name//\`/}
+        PR_BODY="${PR_BODY}
+Stacked on \`${safe_base}\`.
+"
+    fi
+    PR_BODY="${PR_BODY}
+${testplan}"
+}
+
+main() {
+    local remote sha branch remote_url number base_name existing bodyfile err
+
+    remote="${1:-}"
+    sha="${2:-}"
+    branch="${3:-}"
+
+    if [ -z "$remote" ] || [ -z "$sha" ] || [ -z "$branch" ]; then
+        exit 0
+    fi
+    case "$branch" in
+        main|master) exit 0 ;;
+    esac
+    case "$remote" in
+        heroku) exit 0 ;;
+    esac
+    if ! printf '%s' "$sha" | grep -Eq '^[0-9a-fA-F]{40}$'; then
+        exit 0
+    fi
+
+    cd "$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+
+    remote_url=$(git remote get-url "$remote" 2>/dev/null || true)
+    if printf '%s' "$remote_url" | grep -q 'heroku'; then
+        exit 0
+    fi
+
+    command -v gh >/dev/null 2>&1 || exit 0
+
+    if ! wait_for_remote "$remote" "$branch" "$sha"; then
+        log_pr "remote ${remote} did not show ${sha} for ${branch}"
+        exit 0
+    fi
+
+    number=$(gh pr list --head "$branch" --state open --json number --jq '.[0].number' 2>/dev/null || true)
+    if [ -z "$number" ] || [ "$number" = "null" ]; then
+        log_pr "no open pull request for ${branch}"
+        clear_stale_marker
+        exit 0
+    fi
+
+    base_name=$(gh pr view "$number" --json baseRefName --jq .baseRefName 2>/dev/null || true)
+    existing=$(gh pr view "$number" --json body --jq .body 2>/dev/null || true)
+
+    render_pr_update "$sha" "$base_name" "$branch" "$remote" "$existing"
+
+    bodyfile=$(mktemp "${TMPDIR:-/tmp}/pr-body.XXXXXX") || exit 0
+    trap 'rm -f "$bodyfile"' EXIT
+    printf '%s\n' "$PR_BODY" > "$bodyfile"
+
+    if ! err=$(gh pr edit "$number" --title "$PR_TITLE" --body-file "$bodyfile" 2>&1); then
+        log_pr "could not update pull request #${number} for ${branch}: ${err}"
+        exit 0
+    fi
+    log_pr "updated pull request #${number} for ${branch}"
+    clear_stale_marker
+    exit 0
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+    main "$@"
+fi
